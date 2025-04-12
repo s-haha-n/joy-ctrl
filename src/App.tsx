@@ -1,8 +1,7 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-//import {events} from '@react-three/fiber';
 import { Physics, RigidBody } from '@react-three/rapier';
 import { Box, Sphere, Stats } from '@react-three/drei';
-import { useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { Joystick } from 'react-joystick-component';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { ActiveCollisionTypes } from '@dimforge/rapier3d-compat';
@@ -18,7 +17,7 @@ const globalStyles = `
     overflow: hidden;
     touch-action: none; /* Prevents pinch zoom and drag scroll */
   }
-  
+
   canvas {
     display: block;
   }
@@ -133,17 +132,78 @@ const FireButton = ({ onFire }: { onFire: () => void }) => (
   </button>
 );
 
-const BulletManager = ({ bullets }: { bullets: React.ReactNode[] }) => {
-  return <>{bullets}</>;
+// const BulletManager = ({ bullets }: { bullets: React.ReactNode[] }) => {
+type BulletManagerHandle = {
+  fire: () => void;
 };
+
+const BulletManager = forwardRef<BulletManagerHandle>((_, ref) => {
+  const { camera } = useThree();
+  const [bullets, setBullets] = useState<React.ReactNode[]>([]);
+  const [canFire, setCanFire] = useState(true);
+
+  const Bullet = ({ position, velocity }: { position: THREE.Vector3Tuple; velocity: THREE.Vector3Tuple }) => {
+    return (
+      <RigidBody
+        colliders="ball"
+        type="dynamic"
+        position={position}
+        linearVelocity={velocity}
+      >
+        <Sphere args={[0.1]}>
+          <meshStandardMaterial color="red" />
+        </Sphere>
+      </RigidBody>
+    );
+  };
+
+  const handleFire = () => {
+    if (!canFire) return;
+
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward).normalize();
+
+    const bulletPosition = camera.position
+      .clone()
+      .add(forward.clone().multiplyScalar(1));
+    const bulletVelocity = forward.clone().multiplyScalar(35);
+
+    const bullet = (
+      <Bullet
+        key={Date.now()}
+        position={[bulletPosition.x, bulletPosition.y, bulletPosition.z]}
+        velocity={[bulletVelocity.x, bulletVelocity.y, bulletVelocity.z]}
+      />
+    );
+
+    setBullets((prevBullets) => [...prevBullets, bullet]);
+    setCanFire(false);
+
+    setTimeout(() => {
+      setCanFire(true);
+    }, 300);
+  };
+
+  // 👇 Expose fire function to parent
+  useImperativeHandle(ref, () => ({
+    fire: handleFire,
+  }));
+
+  return <>{bullets}</>;
+});
 
 function App() {
   // Debug state and joystick value states
   const [debug, setDebug] = useState(false);
   const [leftJoystick, setLeftJoystick] = useState({ x: 0, y: 0 });
   const [rightJoystick, setRightJoystick] = useState({ x: 0, y: 0 });
-  const [bullets, setBullets] = useState<React.ReactNode[]>([]);
-    const [collisionCount, setCollisionCount] = useState(0); // Track collision count
+  const [collisionCount, setCollisionCount] = useState(0); // Track collision count
+
+  const bulletManagerRef = useRef<BulletManagerHandle>(null);
+
+  const handleFire = () => {
+    bulletManagerRef.current?.fire();
+  };
 
 
   const handleLeftMove = (event: { x: number | null; y: number | null }) => {
@@ -162,45 +222,6 @@ function App() {
     setCollisionCount((prev) => prev + 1);
   };
 
-
-  const Bullet = () => {
-    const { camera } = useThree();
-    const forward = new THREE.Vector3();
-    camera.getWorldDirection(forward);
-    forward.normalize();
-
-    const bulletPosition = camera.position
-      .clone()
-      .add(forward.clone().multiplyScalar(1)); // Start slightly in front of the camera
-    const bulletVelocity = forward.clone().multiplyScalar(35); // Speed of the bullet
-
-    return (
-      <RigidBody
-        colliders="ball"
-        type="dynamic"
-        position={[bulletPosition.x, bulletPosition.y, bulletPosition.z]}
-        linearVelocity={[bulletVelocity.x, bulletVelocity.y, bulletVelocity.z]}
-      >
-        <Sphere args={[0.1]}>
-          <meshStandardMaterial color="red" />
-        </Sphere>
-      </RigidBody>
-    );
-  };
-
-  const [canFire, setCanFire] = useState(true);
-
-  const handleFire = () => {
-    if (!canFire) return;
-
-    setBullets((prevBullets) => [...prevBullets, <Bullet key={Date.now()} />]);
-    setCanFire(false);
-
-    setTimeout(() => {
-      setCanFire(true);
-    }, 300); // Delay of 300ms between shots
-  };
-
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', height: '100vh' }}>
       <Canvas
@@ -213,7 +234,7 @@ function App() {
         <Physics>
           <Ball onCollision={incrementCollisionCount} />
           <Wall />
-          <BulletManager bullets={bullets} />
+          <BulletManager ref={bulletManagerRef} />
         </Physics>
         <CameraController leftJoystick={leftJoystick} rightJoystick={rightJoystick} />
       </Canvas>
@@ -251,8 +272,8 @@ function App() {
               <strong>RIGHT JOYSTICK:</strong> X: {rightJoystick.x.toFixed(1)}, Y:{' '}
               {rightJoystick.y.toFixed(1)}
             </div>
-           <br></br>
-          <FireButton onFire={handleFire} />
+            <br></br>
+            <FireButton onFire={handleFire} />
             <br></br>
             <br></br>
             <div>
