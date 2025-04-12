@@ -1,10 +1,13 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
+//import {events} from '@react-three/fiber';
 import { Physics, RigidBody } from '@react-three/rapier';
 import { Box, Sphere, Stats } from '@react-three/drei';
 import { useRef, useState } from 'react';
 import { Joystick } from 'react-joystick-component';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { ActiveCollisionTypes } from '@dimforge/rapier3d-compat';
+import WaterPlane from './WaterPlane';
+import * as THREE from 'three';
 
 const globalStyles = `
   html, body, #root {
@@ -15,7 +18,7 @@ const globalStyles = `
     overflow: hidden;
     touch-action: none; /* Prevents pinch zoom and drag scroll */
   }
-
+  
   canvas {
     display: block;
   }
@@ -25,10 +28,11 @@ const styleTag = document.createElement('style');
 styleTag.innerHTML = globalStyles;
 document.head.appendChild(styleTag);
 
+
 const activeCollisionTypes =
   ActiveCollisionTypes.DEFAULT | ActiveCollisionTypes.KINEMATIC_FIXED;
 
-const Ball = () => {
+const Ball = ({ onCollision }: { onCollision: () => void }) => {
   const rb = useRef<RAPIER.RigidBody>(null);
   const [color, setColor] = useState('blue');
 
@@ -46,7 +50,11 @@ const Ball = () => {
       colliders="ball"
       type="kinematicPosition"
       activeCollisionTypes={activeCollisionTypes}
-      onCollisionEnter={() => setColor('green')}
+
+      onCollisionEnter={() => {
+        setColor('green');
+        onCollision(); // Increment collision count
+      }}
       onCollisionExit={() => setColor('blue')}
     >
       <Sphere>
@@ -64,25 +72,69 @@ const Wall = () => (
   </RigidBody>
 );
 
-const CameraController = ({ leftJoystick, rightJoystick }: { leftJoystick: { x: number; y: number }; rightJoystick: { x: number; y: number } }) => {
+const CameraController = ({
+  leftJoystick,
+  rightJoystick,
+}: {
+  leftJoystick: { x: number; y: number };
+  rightJoystick: { x: number; y: number };
+}) => {
   const { camera } = useThree();
   const cameraRotationSpeed = 0.05;
   const cameraMovementSpeed = 0.1;
 
   useFrame(() => {
-    // Update camera position based on left joystick
-    camera.position.x += leftJoystick.x * cameraMovementSpeed;
-    camera.position.z -= leftJoystick.y * cameraMovementSpeed;
+    // Calculate the forward and right vectors of the camera
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+
+    camera.getWorldDirection(forward); // Forward vector
+    forward.y = 0; // Ignore vertical movement
+    forward.normalize();
+
+    right.crossVectors(forward, camera.up); // Right vector
+    right.normalize();
+
+    // Calculate movement based on joystick input
+    const moveX = leftJoystick.x * cameraMovementSpeed;
+    const moveZ = leftJoystick.y * cameraMovementSpeed;
+
+    // Apply movement relative to the camera's orientation
+    camera.position.addScaledVector(forward, moveZ); // Forward/backward
+    camera.position.addScaledVector(right, moveX);
 
     // Update camera rotation based on right joystick
-    camera.rotation.y -= rightJoystick.x * cameraRotationSpeed; // Invert horizontal rotation
-    camera.rotation.x = Math.max(
-      Math.min(camera.rotation.x + rightJoystick.y * cameraRotationSpeed, Math.PI / 2), // Invert vertical rotation
-      -Math.PI / 2
-    );
+    camera.rotation.y -= rightJoystick.x * cameraRotationSpeed;
   });
 
   return null;
+};
+
+const FireButton = ({ onFire }: { onFire: () => void }) => (
+  <button
+    onClick={(e) => {
+      // Prevent click propagation to underlying elements
+      e.stopPropagation();
+      onFire();
+    }}
+    style={{
+      width: '60px',
+      height: '60px',
+      borderRadius: '50%',
+      border: 'none',
+      backgroundColor: 'red',
+      color: 'white',
+      fontSize: '16px',
+      cursor: 'pointer',
+      boxShadow: '0 3px 5px rgba(0, 0, 0, 0.3)',
+    }}
+  >
+    FIRE
+  </button>
+);
+
+const BulletManager = ({ bullets }: { bullets: React.ReactNode[] }) => {
+  return <>{bullets}</>;
 };
 
 function App() {
@@ -90,6 +142,9 @@ function App() {
   const [debug, setDebug] = useState(false);
   const [leftJoystick, setLeftJoystick] = useState({ x: 0, y: 0 });
   const [rightJoystick, setRightJoystick] = useState({ x: 0, y: 0 });
+  const [bullets, setBullets] = useState<React.ReactNode[]>([]);
+    const [collisionCount, setCollisionCount] = useState(0); // Track collision count
+
 
   const handleLeftMove = (event: { x: number | null; y: number | null }) => {
     setLeftJoystick({ x: event.x ?? 0, y: event.y ?? 0 });
@@ -100,7 +155,50 @@ function App() {
   };
 
   const toggleDebug = () => {
-    setDebug(prev => !prev);
+    setDebug((prev) => !prev);
+  };
+
+  const incrementCollisionCount = () => {
+    setCollisionCount((prev) => prev + 1);
+  };
+
+
+  const Bullet = () => {
+    const { camera } = useThree();
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.normalize();
+
+    const bulletPosition = camera.position
+      .clone()
+      .add(forward.clone().multiplyScalar(1)); // Start slightly in front of the camera
+    const bulletVelocity = forward.clone().multiplyScalar(35); // Speed of the bullet
+
+    return (
+      <RigidBody
+        colliders="ball"
+        type="dynamic"
+        position={[bulletPosition.x, bulletPosition.y, bulletPosition.z]}
+        linearVelocity={[bulletVelocity.x, bulletVelocity.y, bulletVelocity.z]}
+      >
+        <Sphere args={[0.1]}>
+          <meshStandardMaterial color="red" />
+        </Sphere>
+      </RigidBody>
+    );
+  };
+
+  const [canFire, setCanFire] = useState(true);
+
+  const handleFire = () => {
+    if (!canFire) return;
+
+    setBullets((prevBullets) => [...prevBullets, <Bullet key={Date.now()} />]);
+    setCanFire(false);
+
+    setTimeout(() => {
+      setCanFire(true);
+    }, 300); // Delay of 300ms between shots
   };
 
   return (
@@ -109,85 +207,106 @@ function App() {
         style={{ width: '100%', height: '100%', background: 'white' }}
         camera={{ position: [0, 0, 5], fov: 75, near: 0.1, far: 1000 }}
       >
-        <Stats /> {/* This adds the frame rate counter in the top left */}
+        <Stats />
         <ambientLight />
+        <WaterPlane />
         <Physics>
-          <Ball />
+          <Ball onCollision={incrementCollisionCount} />
           <Wall />
+          <BulletManager bullets={bullets} />
         </Physics>
         <CameraController leftJoystick={leftJoystick} rightJoystick={rightJoystick} />
       </Canvas>
 
-      {/* New control panel at bottom center */}
-      <div 
-        style={{ 
+      <div
+        style={{
           position: 'absolute',
           bottom: 20,
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 10,
-          textAlign: 'left'
+          pointerEvents: 'auto', // Ensures UI elements receive pointer events
+          textAlign: 'center',
         }}
       >
-        
         {debug && (
           <div
+            id="debug-info"
+            className="debug"
             style={{
               backgroundColor: 'rgba(54, 193, 240, 0.1)',
               padding: '5px 10px',
               borderRadius: '4px',
               marginBottom: '10px',
-              color: 'rgba(252, 28, 132, 0.55)',
-              fontSize: '12px',    
-              alignContent: 'left'
+              color: 'rgba(255, 56, 149, 0.75)',
+              fontSize: '12px',
+              textAlign: 'left',
             }}
           >
             <div>
-              <strong>LEFT JOYSTICK:</strong> &nbsp; X: {leftJoystick.x.toFixed(1)}, Y: {leftJoystick.y.toFixed(1)}
+              <strong>LEFT JOYSTICK:</strong> &nbsp; X: {leftJoystick.x.toFixed(1)}, Y:{' '}
+              {leftJoystick.y.toFixed(1)}
             </div>
             <div>
-              <strong>RIGHT JOYSTICK:</strong> X: {rightJoystick.x.toFixed(1)}, Y: {rightJoystick.y.toFixed(1)}
+              <strong>RIGHT JOYSTICK:</strong> X: {rightJoystick.x.toFixed(1)}, Y:{' '}
+              {rightJoystick.y.toFixed(1)}
+            </div>
+           <br></br>
+          <FireButton onFire={handleFire} />
+            <br></br>
+            <br></br>
+            <div>
+              <strong>COLLISION COUNT:</strong> {collisionCount}
             </div>
           </div>
         )}
-        <button 
-          onClick={toggleDebug} 
-          style={{ 
+        <button
+          onClick={toggleDebug}
+          style={{
             padding: '5px 10px',
             fontSize: '12px',
             borderRadius: '5px',
             backgroundColor: 'rgba(54, 193, 240, 0.1)',
-            color: 'rgba(252, 28, 132, 0.55)',
+            color: 'rgba(255, 56, 149, 0.75)',
             border: 'none',
-            marginBottom: '10px',
-            cursor: 'pointer'
+            marginBottom: '20px',
+            cursor: 'pointer',
           }}
         >
           {debug ? 'Disable' : 'Enable'} Debug
         </button>
-        
-        <div style={{ display: 'flex', gap: '40px', justifyContent: 'center' }}>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '120px',
+            justifyContent: 'center',
+            marginBottom: '20px',
+          }}
+        >
           <Joystick
             size={100}
             sticky={false}
-            baseColor="rgba(133, 133, 133, 0.49)"
-            stickColor="rgba(255, 255, 255, 0.49)"
+            baseColor="rgba(133, 133, 133, 0.29)"
+            stickColor="rgba(255, 255, 255, 0.19)"
+            throttle={100} // Throttle move events to every 100ms
             move={handleLeftMove}
             stop={() => setLeftJoystick({ x: 0, y: 0 })}
           />
           <Joystick
             size={100}
             sticky={false}
-            baseColor="rgba(122, 122, 122, 0.49)"
-            stickColor="rgba(255, 255, 255, 0.49)"
+            baseColor="rgba(122, 122, 122, 0.29)"
+            stickColor="rgba(255, 255, 255, 0.19)"
+            throttle={100} // Throttle move events to every 100ms
             move={handleRightMove}
             stop={() => setRightJoystick({ x: 0, y: 0 })}
           />
         </div>
+
       </div>
     </div>
   );
 }
 
 export default App;
-
