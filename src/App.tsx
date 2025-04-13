@@ -1,12 +1,13 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Physics, RigidBody } from '@react-three/rapier';
 import { Box, Sphere, Stats } from '@react-three/drei';
-import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Joystick } from 'react-joystick-component';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { ActiveCollisionTypes } from '@dimforge/rapier3d-compat';
 import WaterPlane from './WaterPlane';
 import * as THREE from 'three';
+import PeerJsCanvasStreamer from './PeerJsCanvasStreamer';
 
 const globalStyles = `
   html, body, #root {
@@ -221,6 +222,14 @@ function App() {
   const incrementCollisionCount = () => {
     setCollisionCount((prev) => prev + 1);
   };
+
+  useEffect(() => {
+    const canvasElement = document.querySelector('canvas');
+    if (canvasElement) {
+      const peerJsCanvasStreamer = new PeerJsCanvasStreamer('43b63326-ca57-4c4f-bc41-9848d67ccc60',canvasElement);
+      console.log('PeerJsCanvasStreamer initialized');
+    }
+  }, []);
 
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', height: '100vh' }}>
