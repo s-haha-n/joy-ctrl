@@ -1,6 +1,22 @@
 import Peer from 'peerjs';
 
-const peer = new Peer(); // Create a new PeerJS instance
+const configuration = {
+  iceServers: [
+    {
+      urls: "stun:146.190.38.66:3478",
+    },
+    {
+      urls: "turn:146.190.38.66:3478",
+      username: "gachet",
+      credential: "gachet",
+    },
+  ],
+};
+
+const peer = new Peer(null, {
+  debug: 3, // Enable detailed PeerJS debugging logs
+  config: configuration, // Pass the custom ICE server configuration
+});
 
 peer.on('open', (id) => {
   console.log(`PeerJS ID: ${id}`);
@@ -8,11 +24,11 @@ peer.on('open', (id) => {
 });
 
 peer.on('call', (call) => {
-  console.log('Incoming call...');
+  console.log('Incoming call:', call);
   call.answer(); // Answer the call without sending a stream
 
   call.on('stream', (remoteStream) => {
-    console.log('Receiving video stream...');
+    console.log('Receiving video stream:', remoteStream);
     const video = document.createElement('video');
     video.srcObject = remoteStream;
     video.play();
@@ -31,9 +47,25 @@ peer.on('call', (call) => {
     });
   });
 
+  call.on('iceStateChanged', (state) => {
+    console.log('ICE state changed:', state);
+  });
+
   call.on('error', (err) => {
     console.error('Call error:', err);
   });
+});
+
+peer.on('connection', (conn) => {
+  console.log('Data connection established:', conn);
+});
+
+peer.on('disconnected', () => {
+  console.log('Peer disconnected');
+});
+
+peer.on('close', () => {
+  console.log('Peer connection closed');
 });
 
 peer.on('error', (err) => {

@@ -226,7 +226,7 @@ function App() {
   useEffect(() => {
     const canvasElement = document.querySelector('canvas');
     if (canvasElement) {
-      const peerJsCanvasStreamer = new PeerJsCanvasStreamer('43b63326-ca57-4c4f-bc41-9848d67ccc60',canvasElement);
+      const peerJsCanvasStreamer = new PeerJsCanvasStreamer('e926b8eb-7466-402e-89df-9f94e6002183',canvasElement);
       console.log('PeerJsCanvasStreamer initialized');
     }
   }, []);
